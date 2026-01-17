@@ -95,6 +95,30 @@ class StatusMonitor:
             # Wait for poll interval or until stop event
             self.stop_event.wait(self.poll_interval)
     
+    def add_job_to_monitor(self, job_id: int, callback: Optional[Callable[[int, str, Dict], None]] = None):
+        """
+        Add a job to monitoring.
+        
+        Args:
+            job_id: The SLURM job ID
+            callback: Optional callback function(job_id, status, info) called on status updates
+        """
+        if callback:
+            self.status_callbacks[job_id] = callback
+        self.current_statuses[job_id] = {}
+    
+    def remove_job_from_monitor(self, job_id: int):
+        """
+        Remove a job from monitoring.
+        
+        Args:
+            job_id: The SLURM job ID
+        """
+        if job_id in self.status_callbacks:
+            del self.status_callbacks[job_id]
+        if job_id in self.current_statuses:
+            del self.current_statuses[job_id]
+    
     def get_status(self, job_id: int) -> Optional[Dict]:
         """
         Get the current cached status for a job.

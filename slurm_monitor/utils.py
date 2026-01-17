@@ -106,3 +106,73 @@ def parse_sacct_output(output: str) -> Dict[str, Any]:
             result[field.strip()] = data[i].strip()
     
     return result
+
+
+def parse_sacct_multiple_output(output: str) -> list[Dict[str, Any]]:
+    """
+    Parse sacct output for multiple jobs.
+    
+    Args:
+        output: Output from sacct command
+        
+    Returns:
+        List of dictionaries with job information
+    """
+    lines = [line.strip() for line in output.strip().split('\n') if line.strip()]
+    if len(lines) < 2:
+        return []
+    
+    # Parse header
+    header = lines[0].split('|')
+    
+    # Parse all data lines
+    results = []
+    for line in lines[1:]:
+        data = line.split('|')
+        result = {}
+        for i, field in enumerate(header):
+            if i < len(data):
+                result[field.strip()] = data[i].strip()
+        if result:
+            results.append(result)
+    
+    return results
+
+
+def get_all_job_ids_from_sacct() -> list[int]:
+    """
+    Get all job IDs from sacct (recent jobs visible to the user).
+    
+    Returns:
+        List of job IDs sorted in descending order
+    """
+    try:
+        # Get recent jobs (last 24 hours by default, or use --starttime to get more)
+        stdout, stderr, returncode = run_slurm_command(
+            ["sacct", "--format=JobID", "--noheader", "--parsable2"],
+            check=False
+        )
+        
+        if returncode != 0 or not stdout.strip():
+            return []
+        
+        job_ids = []
+        for line in stdout.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Extract job ID (may be in format like "12345" or "12345.batch" or "12345_0")
+            job_id_str = line.split('|')[0].split('.')[0].split('_')[0]
+            try:
+                job_id = int(job_id_str)
+                if job_id not in job_ids:
+                    job_ids.append(job_id)
+            except ValueError:
+                continue
+        
+        # Sort in descending order (largest to smallest)
+        job_ids.sort(reverse=True)
+        return job_ids
+    except Exception:
+        return []

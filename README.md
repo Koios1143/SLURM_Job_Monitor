@@ -6,8 +6,11 @@ A Python CLI tool for real-time monitoring of SLURM jobs, providing unified inte
 
 - **Real-time job status monitoring**: Automatically polls SLURM to show job status (QUEUED, RUNNING, COMPLETED, FAILED)
 - **Live stdout and stderr viewing**: Automatically monitors and displays output files as they are written
-- **Scrollable output**: Use mouse scroll or arrow keys to navigate through output history
+- **Scrollable output**: Use mouse scroll or arrow keys to navigate through output history with scroll mode support
 - **Multi-job support**: Monitor multiple jobs simultaneously with easy switching
+- **Auto-detect all jobs**: When no job IDs are provided, automatically monitors all visible jobs from `sacct`
+- **Auto-discover new jobs**: When monitoring without specific job IDs, automatically discovers and adds new jobs to monitoring (every 10 seconds)
+- **Focus preservation**: New jobs are added without disrupting your current view
 - **Beautiful terminal UI**: Modern, color-coded interface using Rich library
 - **Automatic file detection**: Automatically finds and monitors stdout/stderr files
 
@@ -44,7 +47,12 @@ slurm-monitor watch 12345
 
 # Monitor multiple jobs
 slurm-monitor watch 12345 12346 12347
+
+# Monitor all visible jobs from sacct and auto-discover new jobs (no job IDs needed)
+slurm-monitor watch
 ```
+
+Note: When no job IDs are provided, the monitor will automatically discover and add new jobs every 10 seconds without disrupting your current view.
 
 ### Other Commands
 
@@ -61,19 +69,26 @@ slurm-monitor stop 12345
 ### Panel Focus (like tmux)
 - **Tab**: Switch focus between STDOUT and STDERR panels
 - The focused panel is highlighted with a brighter border and shows "[FOCUSED]" indicator
+- Non-focused panels are dimmed for better visual distinction
 
 ### Scrolling (affects focused panel)
-- **Arrow keys (↑↓)**: Scroll through the focused panel
+- **Arrow keys (↑↓)**: Scroll through the focused panel (1 line at a time)
 - **Page Up/Page Down**: Scroll by page (10 lines) in the focused panel
 - **Home/End**: Jump to top/bottom of the focused panel
+- **q**: Exit scroll mode and return to auto-scroll (when in scroll mode)
+- **Mouse wheel**: Scroll through the focused panel (may have limitations)
+
+**Scroll Mode**: When you manually scroll (using arrow keys or mouse), the panel enters "scroll mode" which prevents automatic scrolling to the bottom. Press 'q' to exit scroll mode and return to auto-scroll behavior.
+
+### Job Navigation
+- **n**: Switch to next job (sorted by job ID, descending)
+- **p**: Switch to previous job (sorted by job ID, descending)
+- **d**: Remove current job from monitoring (does not cancel the job)
 
 ### Other
 - **Ctrl+C**: Exit the monitor (does not cancel jobs)
 
-Note: Keyboard controls require the `keyboard` library. On Linux, this may require running with appropriate permissions. If keyboard shortcuts don't work, the output will still auto-scroll to show the latest content.
-
-### Mouse Support
-Mouse scrolling support is currently limited. Use Tab to switch focus and arrow keys to scroll the focused panel.
+Note: Keyboard controls work in most modern terminals. If keyboard shortcuts don't work, the output will still auto-scroll to show the latest content.
 
 ## How It Works
 
@@ -81,6 +96,8 @@ Mouse scrolling support is currently limited. Use Tab to switch focus and arrow 
 2. **Status Monitoring**: Periodically queries `squeue` and `sacct` to get job status
 3. **File Monitoring**: Uses `watchdog` library to monitor stdout/stderr files for changes
 4. **Path Resolution**: Automatically finds output files using `sacct` or common naming patterns
+5. **Auto Job Detection**: When no job IDs provided, uses `sacct` to get all visible jobs and monitors them
+6. **Auto Job Discovery**: When monitoring without specific job IDs, periodically checks `sacct` for new jobs and automatically adds them to monitoring (every 10 seconds) while preserving your current focus
 
 ## Requirements
 

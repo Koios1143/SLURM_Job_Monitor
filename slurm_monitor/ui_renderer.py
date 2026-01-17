@@ -29,6 +29,7 @@ class MonitorUI:
         self.stderr_lines: Dict[int, List[str]] = {}  # Cached lines for scrolling
         self.focused_panel: str = 'stdout'  # 'stdout' or 'stderr' - which panel has focus
         self.scroll_mode: Dict[int, Dict[str, bool]] = {}  # Track if in scroll mode per job/panel
+        self._cached_max_lines_per_panel: Optional[int] = None  # Cache max lines per panel
         self._setup_layout()
     
     def _setup_layout(self):
@@ -79,24 +80,100 @@ class MonitorUI:
             self.log_data[job_id] = {'stdout': '', 'stderr': ''}
         
         if log_type in self.log_data[job_id]:
+            # Store old line count and scroll position before update
+            old_line_count = 0
+            old_scroll_pos = 0
+            if log_type == 'stdout' and job_id in self.stdout_lines:
+                old_line_count = len(self.stdout_lines[job_id])
+                old_scroll_pos = self.stdout_scroll_pos.get(job_id, 0)
+            elif log_type == 'stderr' and job_id in self.stderr_lines:
+                old_line_count = len(self.stderr_lines[job_id])
+                old_scroll_pos = self.stderr_scroll_pos.get(job_id, 0)
+            
             self.log_data[job_id][log_type] += new_content
             
             # Update cached lines for scrolling - rebuild from full content for accuracy
             if log_type == 'stdout':
                 # Rebuild lines from full content to handle edge cases
                 full_content = self.log_data[job_id][log_type]
-                self.stdout_lines[job_id] = full_content.split('\n')
+                new_lines = full_content.split('\n')
+                self.stdout_lines[job_id] = new_lines
                 
-                # Auto-scroll to bottom if not in scroll mode
-                if not self.is_in_scroll_mode(job_id, 'stdout'):
-                    self.scroll_to_bottom_stdout()
+                # Check if we're in scroll mode - if so, preserve scroll position
+                is_in_scroll = self.is_in_scroll_mode(job_id, 'stdout')
+                
+                if is_in_scroll:
+                    # In scroll mode: preserve the scroll position (don't auto-scroll)
+                    # The scroll position is already set, just ensure it's within bounds
+                    # This will be handled by _get_visible_lines
+                    pass
+                else:
+                    # Not in scroll mode: auto-scroll to bottom only if we were already at/near bottom
+                    if self._cached_max_lines_per_panel is None:
+                        try:
+                            terminal_height = self.console.height
+                            available_height = terminal_height - 3 - 4
+                            self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                        except Exception:
+                            self._cached_max_lines_per_panel = 20
+                    max_lines_per_panel = self._cached_max_lines_per_panel
+                    
+                    # Calculate if we were at the bottom before the update
+                    # We were at bottom if: old_line_count <= max_lines_per_panel OR
+                    #                        old_scroll_pos >= (old_line_count - max_lines_per_panel - 2)
+                    if old_line_count == 0:
+                        # First content, scroll to bottom
+                        self.scroll_to_bottom_stdout()
+                    elif old_line_count <= max_lines_per_panel:
+                        # Content was short enough to fit in one screen, we were at bottom
+                        self.scroll_to_bottom_stdout()
+                    else:
+                        # Content was longer, check if we were near the bottom
+                        old_max_scroll = old_line_count - max_lines_per_panel
+                        # We were at bottom if scroll position was within 2 lines of max
+                        if old_scroll_pos >= old_max_scroll - 2:
+                            self.scroll_to_bottom_stdout()
+                        # Otherwise, keep the current scroll position (user was viewing earlier content)
             elif log_type == 'stderr':
                 full_content = self.log_data[job_id][log_type]
-                self.stderr_lines[job_id] = full_content.split('\n')
+                new_lines = full_content.split('\n')
+                self.stderr_lines[job_id] = new_lines
                 
-                # Auto-scroll to bottom if not in scroll mode
-                if not self.is_in_scroll_mode(job_id, 'stderr'):
-                    self.scroll_to_bottom_stderr()
+                # Check if we're in scroll mode - if so, preserve scroll position
+                is_in_scroll = self.is_in_scroll_mode(job_id, 'stderr')
+                
+                if is_in_scroll:
+                    # In scroll mode: preserve the scroll position (don't auto-scroll)
+                    # The scroll position is already set, just ensure it's within bounds
+                    # This will be handled by _get_visible_lines
+                    pass
+                else:
+                    # Not in scroll mode: auto-scroll to bottom only if we were already at/near bottom
+                    if self._cached_max_lines_per_panel is None:
+                        try:
+                            terminal_height = self.console.height
+                            available_height = terminal_height - 3 - 4
+                            self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                        except Exception:
+                            self._cached_max_lines_per_panel = 20
+                    max_lines_per_panel = self._cached_max_lines_per_panel
+                    
+                    # Calculate if we were at the bottom before the update
+                    # We were at bottom if: old_line_count <= max_lines_per_panel OR
+                    #                        old_scroll_pos >= (old_line_count - max_lines_per_panel - 2)
+                    if old_line_count == 0:
+                        # First content, scroll to bottom
+                        self.scroll_to_bottom_stderr()
+                    elif old_line_count <= max_lines_per_panel:
+                        # Content was short enough to fit in one screen, we were at bottom
+                        self.scroll_to_bottom_stderr()
+                    else:
+                        # Content was longer, check if we were near the bottom
+                        old_max_scroll = old_line_count - max_lines_per_panel
+                        # We were at bottom if scroll position was within 2 lines of max
+                        if old_scroll_pos >= old_max_scroll - 2:
+                            self.scroll_to_bottom_stderr()
+                        # Otherwise, keep the current scroll position (user was viewing earlier content)
     
     def is_in_scroll_mode(self, job_id: int, panel: str) -> bool:
         """Check if a panel is in scroll mode (user has manually scrolled)."""
@@ -167,7 +244,8 @@ class MonitorUI:
         table.add_column("Runtime", width=12)
         table.add_column("Name", width=20)
         
-        for job_id in sorted(self.job_data.keys()):
+        # Sort jobs by ID in descending order (largest to smallest)
+        for job_id in sorted(self.job_data.keys(), reverse=True):
             data = self.job_data[job_id]
             status = data.get('status', 'UNKNOWN')
             info = data.get('info', {})
@@ -184,18 +262,31 @@ class MonitorUI:
             runtime = info.get('elapsed', 'N/A')
             job_name = info.get('job_name', f'Job {job_id}')
             
-            # Highlight current job
-            row_style = "bold" if job_id == self.current_job_id else None
+            # Highlight current job with more visible indicator
+            is_current = job_id == self.current_job_id
+            row_style = "bold bright_white on blue" if is_current else None
             
+            # Add indicator for current job
+            job_id_display = f"▶ {job_id}" if is_current else str(job_id)
+            
+            # First row: Job ID, Status, Runtime, Name
             table.add_row(
-                str(job_id),
+                job_id_display,
                 Text(status, style=status_style),
                 runtime,
                 job_name,
                 style=row_style
             )
         
-        return Panel(table, title="Job Status", border_style="yellow")
+        # Add usage instructions at the bottom
+        help_text = Text()
+        help_text.append("n: next job | p: prev job | d: remove job", style="dim")
+        
+        # Create a container with table and help text
+        from rich.console import Group
+        content = Group(table, help_text)
+        
+        return Panel(content, title="Job Status", border_style="yellow")
     
     def _get_visible_lines(self, lines: List[str], scroll_pos: int, max_height: int) -> tuple[List[str], int, int]:
         """
@@ -239,14 +330,20 @@ class MonitorUI:
         )
         
         # Get terminal size for calculating visible lines
-        # Estimate: assume each panel gets about half the terminal height minus borders/headers
+        # Cache the value to avoid recalculation causing position jumps
         try:
             terminal_height = self.console.height
             # Reserve space for header (3) and borders (2 per panel = 4)
             available_height = terminal_height - 3 - 4
-            max_lines_per_panel = max(5, available_height // 2 - 2)  # Reserve 2 lines for panel borders
+            calculated_max = max(5, available_height // 2 - 2)  # Reserve 2 lines for panel borders
+            # Only update cache if terminal size changed significantly (more than 2 lines difference)
+            if self._cached_max_lines_per_panel is None or abs(self._cached_max_lines_per_panel - calculated_max) > 2:
+                self._cached_max_lines_per_panel = calculated_max
+            max_lines_per_panel = self._cached_max_lines_per_panel
         except Exception:
-            max_lines_per_panel = 20  # Default fallback
+            if self._cached_max_lines_per_panel is None:
+                self._cached_max_lines_per_panel = 20  # Default fallback
+            max_lines_per_panel = self._cached_max_lines_per_panel
         
         # Initialize scroll positions if not set
         if job_id not in self.stdout_scroll_pos:
@@ -270,19 +367,15 @@ class MonitorUI:
         )
         stdout_display = '\n'.join(stdout_visible)
         
-        # Add scroll indicator
-        total_stdout = len(self.stdout_lines[job_id])
-        if total_stdout > max_lines_per_panel:
-            scroll_info = f" [{stdout_start+1}-{stdout_end}/{total_stdout}]"
-        else:
-            scroll_info = f" [{total_stdout} lines]"
-        
-        # Highlight focused panel
-        if self.focused_panel == 'stdout':
+        # Highlight focused panel with brighter colors when focused, dimmer when not
+        is_focused = self.focused_panel == 'stdout'
+        if is_focused:
             border_style_stdout = "bright_green"
+            title_style = "bold bright_green"
             focus_indicator = " [FOCUSED]"
         else:
-            border_style_stdout = "green"
+            border_style_stdout = "dim green"
+            title_style = "dim green"
             focus_indicator = " [Press Tab to focus]"
         
         # Add scroll mode indicator
@@ -292,7 +385,7 @@ class MonitorUI:
         
         stdout_panel = Panel(
             stdout_display,
-            title=f"[bold green]STDOUT[/bold green] (Job {job_id}){scroll_info}{focus_indicator}{scroll_mode_indicator} | Tab to switch, ↑↓ to scroll, q to exit scroll",
+            title=f"[{title_style}]STDOUT[/{title_style}] (Job {job_id}){focus_indicator}{scroll_mode_indicator} | Tab to switch, ↑↓ to scroll, q to exit scroll",
             border_style=border_style_stdout,
             title_align="left"
         )
@@ -314,19 +407,15 @@ class MonitorUI:
         )
         stderr_display = '\n'.join(stderr_visible)
         
-        # Add scroll indicator
-        total_stderr = len(self.stderr_lines[job_id])
-        if total_stderr > max_lines_per_panel:
-            scroll_info = f" [{stderr_start+1}-{stderr_end}/{total_stderr}]"
-        else:
-            scroll_info = f" [{total_stderr} lines]"
-        
-        # Highlight focused panel
-        if self.focused_panel == 'stderr':
+        # Highlight focused panel with brighter colors when focused, dimmer when not
+        is_focused = self.focused_panel == 'stderr'
+        if is_focused:
             border_style_stderr = "bright_red"
+            title_style = "bold bright_red"
             focus_indicator = " [FOCUSED]"
         else:
-            border_style_stderr = "red"
+            border_style_stderr = "dim red"
+            title_style = "dim red"
             focus_indicator = " [Press Tab to focus]"
         
         # Add scroll mode indicator
@@ -336,7 +425,7 @@ class MonitorUI:
         
         stderr_panel = Panel(
             stderr_display,
-            title=f"[bold red]STDERR[/bold red] (Job {job_id}){scroll_info}{focus_indicator}{scroll_mode_indicator} | Tab to switch, ↑↓ to scroll, q to exit scroll",
+            title=f"[{title_style}]STDERR[/{title_style}] (Job {job_id}){focus_indicator}{scroll_mode_indicator} | Tab to switch, ↑↓ to scroll, q to exit scroll",
             border_style=border_style_stderr,
             title_align="left"
         )
@@ -365,7 +454,7 @@ class MonitorUI:
             update_callback: Optional callback function called on each update cycle
             keyboard_handler: Optional function to check for keyboard input
         """
-        with Live(self.layout, refresh_per_second=4, screen=True) as live:
+        with Live(self.layout, refresh_per_second=10, screen=True) as live:
             try:
                 while True:
                     if update_callback:
@@ -379,7 +468,7 @@ class MonitorUI:
                             pass
                     
                     live.update(self.render())
-                    time.sleep(0.25)  # Update 4 times per second
+                    time.sleep(0.1)  # Update 10 times per second for smoother scrolling
             except KeyboardInterrupt:
                 pass
     
@@ -395,21 +484,25 @@ class MonitorUI:
         """Scroll stdout down (show later content)."""
         if self.current_job_id and self.current_job_id in self.stdout_scroll_pos:
             total_lines = len(self.stdout_lines.get(self.current_job_id, []))
-            try:
-                terminal_height = self.console.height
-                available_height = terminal_height - 3 - 4
-                max_lines_per_panel = max(5, available_height // 2 - 2)
-            except Exception:
-                max_lines_per_panel = 20
+            # Use cached max_lines_per_panel for consistency
+            if self._cached_max_lines_per_panel is None:
+                try:
+                    terminal_height = self.console.height
+                    available_height = terminal_height - 3 - 4
+                    self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                except Exception:
+                    self._cached_max_lines_per_panel = 20
+            max_lines_per_panel = self._cached_max_lines_per_panel
             max_scroll = max(0, total_lines - max_lines_per_panel)
-            new_pos = min(max_scroll, self.stdout_scroll_pos[self.current_job_id] + lines)
+            current_pos = self.stdout_scroll_pos[self.current_job_id]
+            # Only scroll by the specified number of lines, don't jump to bottom
+            new_pos = min(max_scroll, current_pos + lines)
             self.stdout_scroll_pos[self.current_job_id] = new_pos
-            # Enter scroll mode when user manually scrolls
+            # Enter scroll mode when user manually scrolls - this prevents auto-scroll
             if self.current_job_id:
                 self.set_scroll_mode(self.current_job_id, 'stdout', True)
-                # If scrolled to bottom, exit scroll mode
-                if new_pos >= max_scroll:
-                    self.set_scroll_mode(self.current_job_id, 'stdout', False)
+                # Don't automatically exit scroll mode when reaching bottom
+                # User must explicitly scroll to bottom or press 'q' to exit scroll mode
     
     def scroll_stderr_up(self, lines: int = 1):
         """Scroll stderr up (show earlier content)."""
@@ -423,33 +516,39 @@ class MonitorUI:
         """Scroll stderr down (show later content)."""
         if self.current_job_id and self.current_job_id in self.stderr_scroll_pos:
             total_lines = len(self.stderr_lines.get(self.current_job_id, []))
-            # Get actual visible height from console
-            try:
-                terminal_height = self.console.height
-                available_height = terminal_height - 3 - 4
-                max_lines_per_panel = max(5, available_height // 2 - 2)
-            except Exception:
-                max_lines_per_panel = 20
+            # Use cached max_lines_per_panel for consistency
+            if self._cached_max_lines_per_panel is None:
+                try:
+                    terminal_height = self.console.height
+                    available_height = terminal_height - 3 - 4
+                    self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                except Exception:
+                    self._cached_max_lines_per_panel = 20
+            max_lines_per_panel = self._cached_max_lines_per_panel
             max_scroll = max(0, total_lines - max_lines_per_panel)
-            new_pos = min(max_scroll, self.stderr_scroll_pos[self.current_job_id] + lines)
+            current_pos = self.stderr_scroll_pos[self.current_job_id]
+            # Only scroll by the specified number of lines, don't jump to bottom
+            new_pos = min(max_scroll, current_pos + lines)
             self.stderr_scroll_pos[self.current_job_id] = new_pos
-            # Enter scroll mode when user manually scrolls
+            # Enter scroll mode when user manually scrolls - this prevents auto-scroll
             if self.current_job_id:
                 self.set_scroll_mode(self.current_job_id, 'stderr', True)
-                # If scrolled to bottom, exit scroll mode
-                if new_pos >= max_scroll:
-                    self.set_scroll_mode(self.current_job_id, 'stderr', False)
+                # Don't automatically exit scroll mode when reaching bottom
+                # User must explicitly scroll to bottom or press 'q' to exit scroll mode
     
     def scroll_to_bottom_stdout(self):
         """Scroll stdout to bottom (show latest content)."""
         if self.current_job_id:
             total_lines = len(self.stdout_lines.get(self.current_job_id, []))
-            try:
-                terminal_height = self.console.height
-                available_height = terminal_height - 3 - 4
-                max_lines_per_panel = max(5, available_height // 2 - 2)
-            except Exception:
-                max_lines_per_panel = 20
+            # Use cached max_lines_per_panel for consistency
+            if self._cached_max_lines_per_panel is None:
+                try:
+                    terminal_height = self.console.height
+                    available_height = terminal_height - 3 - 4
+                    self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                except Exception:
+                    self._cached_max_lines_per_panel = 20
+            max_lines_per_panel = self._cached_max_lines_per_panel
             self.stdout_scroll_pos[self.current_job_id] = max(0, total_lines - max_lines_per_panel)
             # Exit scroll mode when scrolling to bottom
             self.set_scroll_mode(self.current_job_id, 'stdout', False)
@@ -458,12 +557,15 @@ class MonitorUI:
         """Scroll stderr to bottom (show latest content)."""
         if self.current_job_id:
             total_lines = len(self.stderr_lines.get(self.current_job_id, []))
-            try:
-                terminal_height = self.console.height
-                available_height = terminal_height - 3 - 4
-                max_lines_per_panel = max(5, available_height // 2 - 2)
-            except Exception:
-                max_lines_per_panel = 20
+            # Use cached max_lines_per_panel for consistency
+            if self._cached_max_lines_per_panel is None:
+                try:
+                    terminal_height = self.console.height
+                    available_height = terminal_height - 3 - 4
+                    self._cached_max_lines_per_panel = max(5, available_height // 2 - 2)
+                except Exception:
+                    self._cached_max_lines_per_panel = 20
+            max_lines_per_panel = self._cached_max_lines_per_panel
             self.stderr_scroll_pos[self.current_job_id] = max(0, total_lines - max_lines_per_panel)
             # Exit scroll mode when scrolling to bottom
             self.set_scroll_mode(self.current_job_id, 'stderr', False)
@@ -543,3 +645,20 @@ class MonitorUI:
     def has_job(self, job_id: int) -> bool:
         """Check if a job is being monitored."""
         return job_id in self.job_data
+    
+    def remove_job(self, job_id: int):
+        """Remove a job from the UI."""
+        if job_id in self.job_data:
+            del self.job_data[job_id]
+        if job_id in self.log_data:
+            del self.log_data[job_id]
+        if job_id in self.stdout_scroll_pos:
+            del self.stdout_scroll_pos[job_id]
+        if job_id in self.stderr_scroll_pos:
+            del self.stderr_scroll_pos[job_id]
+        if job_id in self.stdout_lines:
+            del self.stdout_lines[job_id]
+        if job_id in self.stderr_lines:
+            del self.stderr_lines[job_id]
+        if job_id in self.scroll_mode:
+            del self.scroll_mode[job_id]
