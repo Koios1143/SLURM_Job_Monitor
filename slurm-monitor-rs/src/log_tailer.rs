@@ -192,6 +192,12 @@ impl LogTailer {
     ) -> bool {
         match cmd {
             TailerCommand::AddFile { label, path } => {
+                // Skip if already monitoring this label to prevent duplicate reads
+                if files.contains_key(&label) {
+                    FileState::debug_log(&format!("process_command: AddFile label={} already monitored, skipping", label));
+                    return false;
+                }
+
                 FileState::debug_log(&format!("process_command: AddFile label={} path={}", label, path.display()));
                 let mut state = FileState::new(path.clone());
 
@@ -344,6 +350,8 @@ impl Drop for LogTailer {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::thread;
+    use std::time::Duration;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -376,5 +384,41 @@ mod tests {
         let new_content = state.read_new_content();
         assert!(new_content.is_some());
         assert!(new_content.unwrap().contains("New content"));
+    }
+
+    #[test]
+    fn test_add_file_twice_no_duplicate() {
+        // Create a temp file with known content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "Test content line 1").unwrap();
+        writeln!(temp_file, "Test content line 2").unwrap();
+        temp_file.flush().unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let mut tailer = LogTailer::new(0.1);
+        tailer.start_monitoring(tx);
+
+        // Add the same file twice with the same label
+        tailer.add_file("test_label", temp_file.path());
+        thread::sleep(Duration::from_millis(300));
+        tailer.add_file("test_label", temp_file.path());
+        thread::sleep(Duration::from_millis(300));
+
+        tailer.stop_monitoring();
+
+        // Collect all updates
+        let updates: Vec<LogUpdate> = rx.try_iter().collect();
+
+        // Should only have one update, not two (the second add_file should be ignored)
+        assert_eq!(
+            updates.len(),
+            1,
+            "Expected 1 update, got {}: content should not be duplicated when add_file is called twice",
+            updates.len()
+        );
+
+        // Verify the content is correct
+        assert!(updates[0].content.contains("Test content line 1"));
+        assert!(updates[0].content.contains("Test content line 2"));
     }
 }
