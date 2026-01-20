@@ -165,12 +165,26 @@ impl StatusMonitor {
                 }
             }
 
-            // Wait for poll interval, checking for stop command periodically
+            // Wait for poll interval, processing all commands periodically
             let check_interval = Duration::from_millis(100);
             let mut elapsed = Duration::ZERO;
             while elapsed < poll_interval {
-                if let Ok(MonitorCommand::Stop) = command_rx.try_recv() {
-                    return;
+                // Process ALL pending commands during wait period
+                while let Ok(cmd) = command_rx.try_recv() {
+                    match cmd {
+                        MonitorCommand::AddJob(job_id) => {
+                            if !monitored_jobs.contains(&job_id) {
+                                monitored_jobs.push(job_id);
+                            }
+                        }
+                        MonitorCommand::RemoveJob(job_id) => {
+                            monitored_jobs.retain(|&id| id != job_id);
+                            current_statuses.lock().unwrap().remove(&job_id);
+                        }
+                        MonitorCommand::Stop => {
+                            return;
+                        }
+                    }
                 }
                 thread::sleep(check_interval);
                 elapsed += check_interval;

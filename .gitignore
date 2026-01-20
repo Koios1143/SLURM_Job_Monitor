@@ -1,2 +1,4 @@
 slurm_monitor.egg-info
 __pycache__/
+.cursor/
+target/

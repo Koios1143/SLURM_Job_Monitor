@@ -297,10 +297,23 @@ fn run_event_loop(
             let all_jobs = get_all_job_ids_from_sacct();
 
             for job_id in all_jobs {
-                if !current_jobs.contains(&job_id) {
-                    app.add_job(job_id);
+                // Skip jobs that are already tracked or were explicitly deleted by user
+                if !current_jobs.contains(&job_id) && !app.deleted_jobs.contains(&job_id) {
+                    // Fetch status and info immediately instead of waiting for poll cycle
+                    let status = job_manager.lock().unwrap().get_job_status(job_id);
+                    let info = job_manager.lock().unwrap().get_job_info(job_id);
+                    app.update_job_status(job_id, status, info.clone());
+
                     job_manager.lock().unwrap().add_tracked_job(job_id);
                     status_monitor.add_job_to_monitor(job_id);
+
+                    // Add log files if paths are available
+                    if !info.stdout_path.as_os_str().is_empty() {
+                        log_tailer.add_file(&format!("stdout_{}", job_id), &info.stdout_path);
+                    }
+                    if !info.stderr_path.as_os_str().is_empty() {
+                        log_tailer.add_file(&format!("stderr_{}", job_id), &info.stderr_path);
+                    }
                 }
             }
         }

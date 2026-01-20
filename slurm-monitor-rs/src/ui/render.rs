@@ -71,9 +71,11 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render the status panel with job list.
 fn render_status_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let panel_title = "Job Status (n: prev, p: next, d: delete)";
+    
     if app.jobs.is_empty() {
         let empty = Paragraph::new("No jobs")
-            .block(Block::default().title("Job Status").borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+            .block(Block::default().title(panel_title).borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
         frame.render_widget(empty, area);
         return;
     }
@@ -155,7 +157,7 @@ fn render_status_panel(frame: &mut Frame, app: &App, area: Rect) {
     .header(header)
     .block(
         Block::default()
-            .title("Job Status")
+            .title(panel_title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow)),
     );

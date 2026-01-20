@@ -3,7 +3,7 @@
 use crate::job_manager::JobInfo;
 use crate::utils::JobStatus;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Which panel is currently focused
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +134,8 @@ pub struct App {
     pub stderr_panel_height: usize,
     /// Auto-discover new jobs
     pub auto_discover: bool,
+    /// Jobs that have been explicitly deleted by the user (to prevent re-adding via auto-discovery)
+    pub deleted_jobs: HashSet<u64>,
 }
 
 impl App {
@@ -148,6 +150,7 @@ impl App {
             stdout_panel_height: 20, // Default, will be updated from actual render layout
             stderr_panel_height: 20, // Default, will be updated from actual render layout
             auto_discover: false,
+            deleted_jobs: HashSet::new(),
         }
     }
 
@@ -164,6 +167,8 @@ impl App {
     /// Remove a job from tracking.
     pub fn remove_job(&mut self, job_id: u64) {
         self.jobs.remove(&job_id);
+        // Track deleted jobs to prevent re-adding via auto-discovery
+        self.deleted_jobs.insert(job_id);
         if self.current_job_id == Some(job_id) {
             self.current_job_id = self.get_sorted_job_ids().first().copied();
         }
