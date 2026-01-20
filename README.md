@@ -1,6 +1,8 @@
-# SLURM Job Monitor
+# SLURM Job Monitor (Python)
 
 A Python CLI tool for real-time monitoring of SLURM jobs, providing unified interface to view job status and live stdout/stderr output.
+
+> **Note**: This is the Python version of the SLURM monitor. The command is `slurm-monitor-py` to avoid conflicts with the Rust version (`slurm-monitor`). See [slurm-monitor-rs](./slurm-monitor-rs/) for the Rust implementation.
 
 ## Features
 
@@ -33,23 +35,23 @@ pip install -r requirements.txt
 
 ```bash
 # Submit a job script and immediately start monitoring
-slurm-monitor submit my_job.sh
+slurm-monitor-py submit my_job.sh
 
 # Submit without monitoring
-slurm-monitor submit my_job.sh --no-watch
+slurm-monitor-py submit my_job.sh --no-watch
 ```
 
 ### Monitor Existing Jobs
 
 ```bash
 # Monitor a single job
-slurm-monitor watch 12345
+slurm-monitor-py watch 12345
 
 # Monitor multiple jobs
-slurm-monitor watch 12345 12346 12347
+slurm-monitor-py watch 12345 12346 12347
 
 # Monitor all visible jobs from sacct and auto-discover new jobs (no job IDs needed)
-slurm-monitor watch
+slurm-monitor-py watch
 ```
 
 Note: When no job IDs are provided, the monitor will automatically discover and add new jobs every 10 seconds without disrupting your current view.
@@ -58,10 +60,10 @@ Note: When no job IDs are provided, the monitor will automatically discover and 
 
 ```bash
 # List all tracked jobs
-slurm-monitor list
+slurm-monitor-py list
 
 # Stop tracking a job (does not cancel the job)
-slurm-monitor stop 12345
+slurm-monitor-py stop 12345
 ```
 
 ## UI Controls

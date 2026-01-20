@@ -14,7 +14,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "slurm-monitor=slurm_monitor.cli:main",
+            "slurm-monitor-py=slurm_monitor.cli:main",
         ],
     },
     python_requires=">=3.8",
