@@ -1,0 +1,37 @@
+[package]
+name = "slurm-monitor"
+version = "0.1.0"
+edition = "2021"
+description = "A CLI tool for real-time monitoring of SLURM jobs"
+authors = ["SLURM Monitor Contributors"]
+license = "MIT"
+
+[[bin]]
+name = "slurm-monitor"
+path = "src/main.rs"
+
+[dependencies]
+# CLI parsing
+clap = { version = "4", features = ["derive"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# File watching
+notify = "6.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Regex for parsing SLURM output
+regex = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+[dev-dependencies]
+tempfile = "3.24.0"

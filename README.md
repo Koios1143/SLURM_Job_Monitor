@@ -1,32 +1,44 @@
-# SLURM Job Monitor (Python)
+# SLURM Job Monitor
 
-A Python CLI tool for real-time monitoring of SLURM jobs, providing unified interface to view job status and live stdout/stderr output.
-
-> **Note**: This is the Python version of the SLURM monitor. The command is `slurm-monitor-py` to avoid conflicts with the Rust version (`slurm-monitor`). See [slurm-monitor-rs](./slurm-monitor-rs/) for the Rust implementation.
+A CLI tool for real-time monitoring of SLURM jobs, providing a unified interface to view job status and live stdout/stderr output.
 
 ## Features
 
 - **Real-time job status monitoring**: Automatically polls SLURM to show job status (QUEUED, RUNNING, COMPLETED, FAILED)
 - **Live stdout and stderr viewing**: Automatically monitors and displays output files as they are written
-- **Scrollable output**: Use mouse scroll or arrow keys to navigate through output history with scroll mode support
+- **Scrollable output**: Use arrow keys to navigate through output history with scroll mode support
 - **Multi-job support**: Monitor multiple jobs simultaneously with easy switching
 - **Auto-detect all jobs**: When no job IDs are provided, automatically monitors all visible jobs from `sacct`
-- **Auto-discover new jobs**: When monitoring without specific job IDs, automatically discovers and adds new jobs to monitoring (every 10 seconds)
-- **Focus preservation**: New jobs are added without disrupting your current view
-- **Beautiful terminal UI**: Modern, color-coded interface using Rich library
-- **Automatic file detection**: Automatically finds and monitors stdout/stderr files
+- **Auto-discover new jobs**: When monitoring without specific job IDs, automatically discovers and adds new jobs to monitoring
+- **Beautiful terminal UI**: Modern, color-coded interface using Ratatui
+- **Single binary**: Easy deployment with no runtime dependencies
+
+## Requirements
+
+- SLURM workload manager installed and configured
+- Access to SLURM commands: `sbatch`, `squeue`, `sacct`
+
+### For Building from Source
+
+- Rust 1.70+ (for building)
 
 ## Installation
 
+### From Source (Recommended)
+
 ```bash
-# Clone or navigate to the project directory
-cd SLURM-tools
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Install in development mode
-pip install -e .
+# Clone and build
+cd SLURM-tools/slurm-monitor-rs
+cargo build --release
 
-# Or install dependencies directly
-pip install -r requirements.txt
+# Install to your PATH
+cargo install --path .
+
+# Or copy the binary manually
+cp target/release/slurm-monitor ~/.local/bin/
 ```
 
 ## Usage
@@ -35,23 +47,23 @@ pip install -r requirements.txt
 
 ```bash
 # Submit a job script and immediately start monitoring
-slurm-monitor-py submit my_job.sh
+slurm-monitor submit my_job.sh
 
 # Submit without monitoring
-slurm-monitor-py submit my_job.sh --no-watch
+slurm-monitor submit my_job.sh --no-watch
 ```
 
 ### Monitor Existing Jobs
 
 ```bash
 # Monitor a single job
-slurm-monitor-py watch 12345
+slurm-monitor watch 12345
 
 # Monitor multiple jobs
-slurm-monitor-py watch 12345 12346 12347
+slurm-monitor watch 12345 12346 12347
 
-# Monitor all visible jobs from sacct and auto-discover new jobs (no job IDs needed)
-slurm-monitor-py watch
+# Monitor all visible jobs from sacct and auto-discover new jobs
+slurm-monitor watch
 ```
 
 Note: When no job IDs are provided, the monitor will automatically discover and add new jobs every 10 seconds without disrupting your current view.
@@ -60,27 +72,25 @@ Note: When no job IDs are provided, the monitor will automatically discover and 
 
 ```bash
 # List all tracked jobs
-slurm-monitor-py list
+slurm-monitor list
 
 # Stop tracking a job (does not cancel the job)
-slurm-monitor-py stop 12345
+slurm-monitor stop 12345
 ```
 
 ## UI Controls
 
-### Panel Focus (like tmux)
+### Panel Focus
 - **Tab**: Switch focus between STDOUT and STDERR panels
 - The focused panel is highlighted with a brighter border and shows "[FOCUSED]" indicator
-- Non-focused panels are dimmed for better visual distinction
 
 ### Scrolling (affects focused panel)
 - **Arrow keys (↑↓)**: Scroll through the focused panel (1 line at a time)
 - **Page Up/Page Down**: Scroll by page (10 lines) in the focused panel
 - **Home/End**: Jump to top/bottom of the focused panel
-- **q**: Exit scroll mode and return to auto-scroll (when in scroll mode)
-- **Mouse wheel**: Scroll through the focused panel (may have limitations)
+- **q**: Exit scroll mode and return to auto-scroll (or quit if not in scroll mode)
 
-**Scroll Mode**: When you manually scroll (using arrow keys or mouse), the panel enters "scroll mode" which prevents automatic scrolling to the bottom. Press 'q' to exit scroll mode and return to auto-scroll behavior.
+**Scroll Mode**: When you manually scroll, the panel enters "scroll mode" which prevents automatic scrolling to the bottom. Press 'q' to exit scroll mode and return to auto-scroll behavior.
 
 ### Job Navigation
 - **n**: Switch to next job (sorted by job ID, descending)
@@ -90,23 +100,31 @@ slurm-monitor-py stop 12345
 ### Other
 - **Ctrl+C**: Exit the monitor (does not cancel jobs)
 
-Note: Keyboard controls work in most modern terminals. If keyboard shortcuts don't work, the output will still auto-scroll to show the latest content.
-
 ## How It Works
 
 1. **Job Submission**: Uses `sbatch` to submit jobs and parses the job ID from output
 2. **Status Monitoring**: Periodically queries `squeue` and `sacct` to get job status
-3. **File Monitoring**: Uses `watchdog` library to monitor stdout/stderr files for changes
+3. **File Monitoring**: Uses file system events to monitor stdout/stderr files for changes
 4. **Path Resolution**: Automatically finds output files using `sacct` or common naming patterns
-5. **Auto Job Detection**: When no job IDs provided, uses `sacct` to get all visible jobs and monitors them
-6. **Auto Job Discovery**: When monitoring without specific job IDs, periodically checks `sacct` for new jobs and automatically adds them to monitoring (every 10 seconds) while preserving your current focus
+5. **Auto Job Detection**: When no job IDs provided, uses `sacct` to get all visible jobs
+6. **Auto Job Discovery**: Periodically checks `sacct` for new jobs and automatically adds them to monitoring
 
-## Requirements
+## Project Structure
 
-- Python 3.8+
-- SLURM workload manager installed and configured
-- Access to SLURM commands: `sbatch`, `squeue`, `sacct`
-- Terminal with support for Rich library (most modern terminals)
+```
+slurm-monitor-rs/
+├── src/
+│   ├── main.rs           # Entry point
+│   ├── cli.rs            # CLI definitions and command handlers
+│   ├── job_manager.rs    # SLURM job lifecycle management
+│   ├── status_monitor.rs # Multi-threaded status polling
+│   ├── log_tailer.rs     # File monitoring with notify
+│   ├── ui/
+│   │   ├── mod.rs        # UI module exports
+│   │   ├── app.rs        # Application state
+│   │   └── render.rs     # Ratatui rendering
+│   └── utils.rs          # SLURM command execution/parsing
+```
 
 ## Troubleshooting
 
@@ -131,23 +149,24 @@ This usually means:
 
 ### UI not displaying correctly
 
-- Ensure your terminal supports Rich library features
+- Ensure your terminal supports modern features (colors, Unicode)
 - Try resizing your terminal window
-- Check that your terminal supports colors and Unicode
+- If using tmux/screen, ensure proper terminal settings
 
-## Development
+## Python Version (Legacy)
 
-The project structure:
+A Python version is also available for systems where installing Rust is not feasible:
 
+```bash
+# Install Python version
+cd SLURM-tools
+pip install -e .
+
+# Use with slurm-monitor-py command
+slurm-monitor-py watch 12345
 ```
-slurm_monitor/
-├── cli.py              # CLI entry point and command definitions
-├── job_manager.py      # Job submission and status management
-├── status_monitor.py   # Periodic status polling
-├── log_tailer.py       # File monitoring for stdout/stderr
-├── ui_renderer.py      # Rich-based terminal UI
-└── utils.py            # Utility functions for SLURM commands
-```
+
+See [slurm_monitor/](./slurm_monitor/) for the Python implementation details.
 
 ## License
 
